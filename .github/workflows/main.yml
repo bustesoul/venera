@@ -18,13 +18,13 @@ jobs:
       - run: sudo xcode-select --switch /Applications/Xcode_16.0.app
       - run: flutter pub get
         # Step 1: Decode and install the certificate
-      - name: Decode and install certificate
-        env:
-          CERTIFICATE: ${{ secrets.CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
-        run: |
-          echo "$CERTIFICATE" | base64 --decode > signing_certificate.p12
-          security import signing_certificate.p12 -k ~/Library/Keychains/login.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+      # - name: Decode and install certificate
+      #   env:
+      #     CERTIFICATE: ${{ secrets.CERTIFICATE }}
+      #     CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+      #   run: |
+      #     echo "$CERTIFICATE" | base64 --decode > signing_certificate.p12
+      #     security import signing_certificate.p12 -k ~/Library/Keychains/login.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
 
       # Step 2: Build the Flutter macOS app
       - name: Build Flutter macOS App
@@ -80,8 +80,8 @@ jobs:
           STORE_FILE: ${{ secrets.ANDROID_KEYSTORE }}
           PROPERTY_FILE: ${{ secrets.ANDROID_KEY_PROPERTIES }}
         run: |
-            echo "$STORE_FILE" | base64 --decode > android/keystore.jks
-            echo "$PROPERTY_FILE" > android/key.properties
+          echo "$STORE_FILE" | base64 --decode > android/keystore.jks
+          echo "$PROPERTY_FILE" > android/key.properties
       - uses: actions/setup-java@v4
         with:
           distribution: 'oracle'
@@ -91,6 +91,9 @@ jobs:
           rustup update
           rustup default stable
       - run: flutter pub get
+      - run: ls -alh android
+      - run: cat android/key.properties
+      - run: ls -alh android/keystore.jks
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
