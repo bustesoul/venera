@@ -237,12 +237,12 @@ class _LocalFavoritesPageState extends State<_LocalFavoritesPage> {
                       icon: Icons.upload_file,
                       text: "Export".tl,
                       onClick: () {
-                        var json = LocalFavoritesManager().folderToJson(
+                        var json = LocalFavoritesManager().folderIdToStr(
                           widget.folder,
                         );
                         saveFile(
                           data: utf8.encode(json),
-                          filename: "${widget.folder}.json",
+                          filename: "${widget.folder}.txt",
                         );
                       }),
                   MenuEntry(

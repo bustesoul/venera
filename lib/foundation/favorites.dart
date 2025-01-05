@@ -745,6 +745,13 @@ class LocalFavoritesManager with ChangeNotifier {
     notifyListeners();
   }
 
+  String folderIdToStr(String folder) {
+    var res = _db.select("""
+      select id from "$folder";
+    """);
+    return res.map((e) => e["id"]).join("\n");
+  }
+
   String folderToJson(String folder) {
     var res = _db.select("""
       select * from "$folder";
