@@ -151,6 +151,45 @@ jobs:
           sudo rm -rf build/linux/arch/pkg
           sudo rm -rf build/linux/arch/src
           sudo rm -rf build/linux/arch/PKGBUILD
+      - name: Build AppImage
+        run: |
+          sudo apt-get install -y libfuse2
+          wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+          
+          mkdir -p Venera.AppDir
+          cp -r build/linux/x64/release/bundle/* Venera.AppDir/
+          
+          cat > Venera.AppDir/venera.desktop << EOF
+          [Desktop Entry]
+          Name=Venera
+          Exec=venera
+          Icon=venera
+          Type=Application
+          Categories=Utility;
+          EOF
+          
+          cp assets/app_icon.png Venera.AppDir/venera.png
+          
+          cat > Venera.AppDir/AppRun << EOF
+          #!/bin/sh
+          HERE=\$(dirname \$(readlink -f "\${0}"))
+          export PATH="\${HERE}"/usr/bin/:"\${HERE}"/usr/sbin/:"\${HERE}"/usr/games/:"\${HERE}"/bin/:"\${HERE}"/sbin/:\${PATH}
+          export LD_LIBRARY_PATH="\${HERE}"/usr/lib/:\${LD_LIBRARY_PATH}
+          export XDG_DATA_DIRS="\${HERE}"/usr/share/:\${XDG_DATA_DIRS}
+          exec "\${HERE}"/venera "\$@"
+          EOF
+          chmod +x Venera.AppDir/AppRun
+          
+          APP_VERSION=$(grep "version:" pubspec.yaml | cut -d':' -f2 | tr -d ' ')
+          ./appimagetool Venera.AppDir Venera-${APP_VERSION}-x86_64.AppImage
+          
+          mkdir -p build/linux/appimage
+          mv Venera-${APP_VERSION}-x86_64.AppImage build/linux/appimage/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage_build
+          path: build/linux/appimage
       - uses: actions/upload-artifact@v4
         with:
           name: deb_build
@@ -193,6 +232,10 @@ jobs:
         with:
           name: deb_arm64_build
           path: outputs
+      - uses: actions/download-artifact@v4
+        with:
+          name: appimage_build
+          path: outputs
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -204,5 +247,6 @@ jobs:
             outputs/*.exe
             outputs/*.deb
             outputs/*.zst
+            outputs/*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.ACTION_GITHUB_TOKEN }}
