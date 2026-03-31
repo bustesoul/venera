@@ -6,54 +6,6 @@ on:
     types: [published]
 
 jobs:
-  Build_MacOS:
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v3
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: "stable"
-          flutter-version-file: pubspec.yaml
-          architecture: x64
-      - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
-      - run: flutter pub get
-        # Step 1: Decode and install the certificate
-      - name: Decode and install certificate
-        env:
-          CERTIFICATE: ${{ secrets.CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
-        run: |
-          echo "$CERTIFICATE" | base64 --decode > signing_certificate.p12
-          security import signing_certificate.p12 -k ~/Library/Keychains/login.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-
-      - name: Check rust-toolchain.toml
-        run: rustup show
-
-      # Step 2: Build the Flutter macOS app
-      - name: Build Flutter macOS App
-        run: flutter build macos --release
-
-      # Step 3: Create the DMG file
-      - name: Create DMG
-        run: |
-          mkdir -p dist
-          mkdir -p dist/dmg_contents
-          cp -R build/macos/Build/Products/Release/venera.app dist/dmg_contents/
-          ln -s /Applications dist/dmg_contents/Applications
-          hdiutil create -volname "venera" -srcfolder dist/dmg_contents -ov -format UDZO "dist/venera.dmg"
-
-      - name: Add version to filename
-        run: |
-          APP_VERSION=$(grep "version:" pubspec.yaml | cut -d':' -f2 | tr -d ' ')
-          mkdir -p result
-          mv dist/venera.dmg result/venera-$APP_VERSION.dmg
-
-      # Step 4: Attach and upload artifacts (optional)
-      - name: Upload DMG
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos_build
-          path: result/
   Build_IOS:
     runs-on: macos-15
     steps:
@@ -67,9 +19,9 @@ jobs:
       - run: flutter pub get
       - run: flutter build ios --release --no-codesign
       - run: |
-          mkdir -p /Users/runner/work/venera/venera/build/ios/iphoneos/Payload
-          mv /Users/runner/work/venera/venera/build/ios/iphoneos/Runner.app /Users/runner/work/venera/venera/build/ios/iphoneos/Payload
-          cd /Users/runner/work/venera/venera/build/ios/iphoneos/
+          mkdir -p build/ios/iphoneos/Payload
+          mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload
+          cd build/ios/iphoneos/
           zip -r venera-ios.ipa Payload
       - name: Add version to filename
         run: |
@@ -90,13 +42,6 @@ jobs:
           channel: "stable"
           flutter-version-file: pubspec.yaml
           architecture: x64
-      - name: Decode and install certificate
-        env:
-          STORE_FILE: ${{ secrets.ANDROID_KEYSTORE }}
-          PROPERTY_FILE: ${{ secrets.ANDROID_KEY_PROPERTIES }}
-        run: |
-            echo "$STORE_FILE" | base64 --decode > android/keystore.jks
-            echo "$PROPERTY_FILE" > android/key.properties
       - uses: actions/setup-java@v4
         with:
           distribution: 'oracle'
@@ -113,17 +58,26 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Setup Flutter
+        shell: pwsh
+        run: |
+          $flutterVersion = Select-String -Path pubspec.yaml -Pattern '^\s{2}flutter:\s*([0-9.]+)\s*$' | Select-Object -First 1
+          if (-not $flutterVersion) {
+            throw "Failed to parse Flutter version from pubspec.yaml"
+          }
+          $version = $flutterVersion.Matches[0].Groups[1].Value
+          $archive = "flutter_windows_${version}-stable.zip"
+          $url = "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/$archive"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\flutter.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\flutter.zip" -DestinationPath $env:RUNNER_TEMP
+          "$env:RUNNER_TEMP\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:Path = "$env:RUNNER_TEMP\flutter\bin;$env:Path"
+          flutter --version
       - name: install dependencies
-        run: | 
-          choco install yq -y
-          pip install httpx
+        run: |
+          python -m pip install httpx
       - name: Install Inno Setup
-        run: choco install innosetup --no-progress
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: "stable"
-          flutter-version-file: pubspec.yaml
-          architecture: x64
+        run: choco install innosetup --no-progress -y
       - name: build
         run: |
           flutter pub get
@@ -184,13 +138,11 @@ jobs:
 
   Release:
     runs-on: ubuntu-22.04
-    needs: [Build_MacOS, Build_IOS, Build_Android, Build_Windows, Build_Linux, Build_Linux_ARM64]
+    permissions:
+      contents: write
+    needs: [Build_IOS, Build_Android, Build_Windows, Build_Linux, Build_Linux_ARM64]
     if: github.event_name == 'release'  # 仅在 push 事件时执行
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: macos_build
-          path: outputs
       - uses: actions/download-artifact@v4
         with:
           name: ios_build
@@ -220,7 +172,6 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: |
             outputs/*.ipa
-            outputs/*.dmg
             outputs/*.apk
             outputs/*.zip
             outputs/*.exe
@@ -228,4 +179,4 @@ jobs:
             outputs/*.zst
             outputs/*.AppImage
         env:
-          GITHUB_TOKEN: ${{ secrets.ACTION_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.ACTION_GITHUB_TOKEN || github.token }}
