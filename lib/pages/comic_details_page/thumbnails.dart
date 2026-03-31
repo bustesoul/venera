@@ -56,6 +56,16 @@ class _ComicThumbnailsState extends State<_ComicThumbnails> {
 
   @override
   Widget build(BuildContext context) {
+    const thumbnailMaxCrossAxisExtent = 200.0;
+    const thumbnailAspectRatio = 0.68;
+    final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+    final thumbnailCacheWidth =
+        (thumbnailMaxCrossAxisExtent * devicePixelRatio).round();
+    final thumbnailCacheHeight =
+        ((thumbnailMaxCrossAxisExtent / thumbnailAspectRatio) *
+                devicePixelRatio)
+            .round();
+
     return MultiSliver(
       children: [
         SliverToBoxAdapter(
@@ -127,6 +137,8 @@ class _ComicThumbnailsState extends State<_ComicThumbnails> {
                             fit: BoxFit.contain,
                             width: double.infinity,
                             height: double.infinity,
+                            cacheWidth: thumbnailCacheWidth,
+                            cacheHeight: thumbnailCacheHeight,
                             part: part,
                           ),
                         ),
@@ -142,8 +154,8 @@ class _ComicThumbnailsState extends State<_ComicThumbnails> {
             },
           ),
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 200,
-            childAspectRatio: 0.68,
+            maxCrossAxisExtent: thumbnailMaxCrossAxisExtent,
+            childAspectRatio: thumbnailAspectRatio,
           ),
         ),
         if (error != null)

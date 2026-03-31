@@ -157,7 +157,10 @@ class AppDio with DioMixin {
       options!.headers!.remove('prevent-parallel');
     }
     try {
-      return super.request<T>(
+      // Keep the prevent-parallel lock until the underlying request actually
+      // completes. Returning the Future directly here would release the lock
+      // too early in this async try/finally block.
+      return await super.request<T>(
         path,
         data: data,
         queryParameters: queryParameters,
