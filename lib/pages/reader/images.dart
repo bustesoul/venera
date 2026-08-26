@@ -1408,33 +1408,6 @@ class _ReaderLiveImageStream {
   }
 }
 
-/// [_precacheImage] is used to precache the image for the given page.
-/// The image is cached using the flutter's [precacheImage] method.
-/// The image will be downloaded and decoded into memory.
-void _precacheImage(int page, BuildContext context) {
-  if (page <= 0 || page > context.reader.images!.length) {
-    return;
-  }
-  precacheImage(_createImageProvider(page, context), context);
-}
-
-/// [_preDownloadImage] is used to download the image for the given page.
-/// The image is downloaded using the [CacheManager] and saved to the local storage.
-void _preDownloadImage(int page, BuildContext context) {
-  if (page <= 0 || page > context.reader.images!.length) {
-    return;
-  }
-  var reader = context.reader;
-  var imageKey = reader.images![page - 1];
-  if (imageKey.startsWith("file://")) {
-    return;
-  }
-  var cid = reader.cid;
-  var eid = reader.eid;
-  var sourceKey = reader.type.comicSource?.key;
-  ImageDownloader.loadComicImage(imageKey, sourceKey, cid, eid);
-}
-
 class _SwipeChangeChapterProgress extends StatefulWidget {
   const _SwipeChangeChapterProgress({this.controller, required this.isPrev});
 

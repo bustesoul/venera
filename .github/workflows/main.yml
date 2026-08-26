@@ -9,7 +9,7 @@ jobs:
   Build_IOS:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
@@ -35,7 +35,7 @@ jobs:
   Build_Android:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - run: rm -rf /opt/hostedtoolcache
       - uses: subosito/flutter-action@v2
         with:
@@ -57,7 +57,7 @@ jobs:
   Build_Windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Setup Flutter
         shell: pwsh
         run: |
@@ -79,6 +79,11 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
       - name: build
+        env:
+          # local_auth_windows compiles with /await, which makes the Windows SDK's
+          # winrt/base.h include <experimental/coroutine>; newer MSVC (VS2026) turns
+          # that into a hard error (STL1011) unless this macro is defined.
+          CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
         run: |
           flutter pub get
           python windows/build.py
