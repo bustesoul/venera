@@ -154,6 +154,7 @@ class _GalleryMode extends StatefulWidget {
 class _GalleryModeState extends State<_GalleryMode>
     implements _ImageViewController {
   late PageController controller;
+  late final _ReaderLiveImageCacheManager liveCacheManager;
 
   int get preCacheCount => appdata.settings["preloadImageCount"];
 
@@ -205,11 +206,26 @@ class _GalleryModeState extends State<_GalleryMode>
   void initState() {
     reader = context.reader;
     controller = PageController(initialPage: reader.page);
+    liveCacheManager = _ReaderLiveImageCacheManager(
+      context: context,
+      createProvidersForPage: _createProvidersForPage,
+    );
     reader._imageViewController = this;
     Future.microtask(() {
       context.readerScaffold.setFloatingButton(0);
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        updateLiveCache(reader.page);
+      }
+    });
     super.initState();
+  }
+
+  @override
+  void dispose() {
+    liveCacheManager.dispose();
+    super.dispose();
   }
 
   /// Get the range of images for the given page. [page] is 1-based.
@@ -246,26 +262,26 @@ class _GalleryModeState extends State<_GalleryMode>
     return (startIndex, endIndex);
   }
 
-  void cache(int startPage) {
-    for (int i = startPage - 1; i <= startPage + preCacheCount; i++) {
-      if (i == startPage ||
-          i <= 0 ||
-          i > totalPages ||
-          isChapterCommentsPage(i)) {
-        continue;
-      }
-      _cachePage(i, i == startPage + 1 || i == startPage - 1);
+  List<ImageProvider> _createProvidersForPage(int page) {
+    if (page <= 0 || page > totalPages || isChapterCommentsPage(page)) {
+      return const [];
     }
+    var (startIndex, endIndex) = getPageImagesRange(page);
+    return [
+      for (int i = startIndex; i < endIndex; i++)
+        _createImageProviderFromKey(reader.images![i], context, i + 1),
+    ];
   }
 
-  void _cachePage(int page, bool shouldPreCache) {
-    if (isChapterCommentsPage(page)) return;
-    var (startIndex, endIndex) = getPageImagesRange(page);
-    for (int i = startIndex; i < endIndex; i++) {
-      shouldPreCache
-          ? _precacheImage(i + 1, context)
-          : _preDownloadImage(i + 1, context);
+  void updateLiveCache(int currentPage) {
+    var targetPages = <int>{};
+    for (int i = currentPage + 1; i <= currentPage + preCacheCount; i++) {
+      if (i <= 0 || i > totalPages || isChapterCommentsPage(i)) {
+        continue;
+      }
+      targetPages.add(i);
     }
+    liveCacheManager.updatePages(targetPages);
   }
 
   Widget _buildChapterCommentsPage() {
@@ -326,8 +342,6 @@ class _GalleryModeState extends State<_GalleryMode>
               endIndex,
             );
 
-            cache(index);
-
             photoViewControllers[index] ??= PhotoViewController();
 
             if (reader.imagesPerPage == 1 || pageImages.length == 1) {
@@ -381,21 +395,28 @@ class _GalleryModeState extends State<_GalleryMode>
           );
         },
         onPageChanged: (i) {
+          int? currentPage;
           if (i == 0) {
             if (reader.isFirstChapterOfGroup || !reader.toPrevChapter(toLastPage: true)) {
               controller.jumpToPage(1);
+              currentPage = 1;
             }
           } else if (i == totalPages + 1) {
             if (reader.isLastChapterOfGroup || !reader.toNextChapter()) {
               controller.jumpToPage(totalPages);
+              currentPage = totalPages;
             }
           } else {
             reader.setPage(i);
             context.readerScaffold.update();
+            currentPage = i;
             // Auto close toolbar when entering chapter comments page
             if (isChapterCommentsPage(i) && context.readerScaffold.isOpen) {
               context.readerScaffold.openOrClose();
             }
+          }
+          if (currentPage != null) {
+            updateLiveCache(currentPage);
           }
           // Remove other pages' controllers to reset their state.
           var keys = photoViewControllers.keys.toList();
@@ -677,9 +698,8 @@ class _ContinuousModeState extends State<_ContinuousMode>
   var fingers = 0;
   bool disableScroll = false;
 
-  late List<bool> cached;
-
   int get preCacheCount => appdata.settings["preloadImageCount"];
+  late final _ReaderLiveImageCacheManager liveCacheManager;
 
   /// Whether the user was scrolling the page.
   /// The gesture detector has a delay to detect tap event.
@@ -707,18 +727,28 @@ class _ContinuousModeState extends State<_ContinuousMode>
   void initState() {
     reader = context.reader;
     reader._imageViewController = this;
-    itemPositionsListener.itemPositions.addListener(onPositionChanged);
-    cached = List.filled(reader.maxPage + 2, false);
-    Future.delayed(
-      const Duration(milliseconds: 100),
-      () => cacheImages(reader.page),
+    liveCacheManager = _ReaderLiveImageCacheManager(
+      context: context,
+      createProvidersForPage: (page) {
+        if (page <= 0 || page > reader.maxPage) {
+          return const [];
+        }
+        return [_createImageProvider(page, context)];
+      },
     );
+    itemPositionsListener.itemPositions.addListener(onPositionChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        cacheImages(reader.page);
+      }
+    });
     super.initState();
   }
 
   @override
   void dispose() {
     itemPositionsListener.itemPositions.removeListener(onPositionChanged);
+    liveCacheManager.dispose();
     super.dispose();
   }
 
@@ -794,12 +824,13 @@ class _ContinuousModeState extends State<_ContinuousMode>
   }
 
   void cacheImages(int current) {
+    var targetPages = <int>{};
     for (int i = current + 1; i <= current + preCacheCount; i++) {
-      if (i <= reader.maxPage && !cached[i]) {
-        _preDownloadImage(i, context);
-        cached[i] = true;
+      if (i <= reader.maxPage) {
+        targetPages.add(i);
       }
     }
+    liveCacheManager.updatePages(targetPages);
   }
 
   void onScroll() {
@@ -1224,8 +1255,8 @@ ImageProvider _createImageProviderFromKey(
     reader.type.comicSource?.key,
     reader.cid,
     reader.eid,
-    reader.page,
-    enableResize: reader.mode.isContinuous, // For continuous mode, we need to resize the image to improve performance
+    page,
+    enableResize: true,
   );
 }
 
@@ -1233,6 +1264,148 @@ ImageProvider _createImageProvider(int page, BuildContext context) {
   var reader = context.reader;
   var imageKey = reader.images![page - 1];
   return _createImageProviderFromKey(imageKey, context, page);
+}
+
+class _ReaderLiveImageCacheManager {
+  _ReaderLiveImageCacheManager({
+    required this.context,
+    required this.createProvidersForPage,
+  });
+
+  final BuildContext context;
+  final List<ImageProvider> Function(int page) createProvidersForPage;
+  final Map<int, _ReaderLiveImagePage> _livePages = {};
+  final Set<int> _completedPages = {};
+
+  void updatePages(Iterable<int> pages) {
+    final targetPages = pages.toSet();
+
+    final stalePages = _livePages.keys
+        .where((page) => !targetPages.contains(page))
+        .toList();
+    for (final page in stalePages) {
+      _disposePage(page);
+    }
+
+    for (final page in targetPages) {
+      if (_completedPages.contains(page) || _livePages.containsKey(page)) {
+        continue;
+      }
+      _livePages.putIfAbsent(page, () {
+        return _ReaderLiveImagePage(
+          providers: createProvidersForPage(page),
+          configuration: createLocalImageConfiguration(context),
+          onCompleted: () {
+            _completedPages.add(page);
+          },
+        );
+      });
+    }
+  }
+
+  void _disposePage(int page) {
+    final entries = _livePages.remove(page);
+    if (entries == null) {
+      return;
+    }
+    entries.dispose();
+  }
+
+  void dispose() {
+    final pages = _livePages.keys.toList();
+    for (final page in pages) {
+      _disposePage(page);
+    }
+    _completedPages.clear();
+  }
+}
+
+class _ReaderLiveImagePage {
+  _ReaderLiveImagePage({
+    required List<ImageProvider> providers,
+    required ImageConfiguration configuration,
+    required this.onCompleted,
+  }) {
+    _remainingImages = providers.length;
+    _streams = [
+      for (final provider in providers)
+        _ReaderLiveImageStream(
+          provider: provider,
+          configuration: configuration,
+          onLoaded: _handleImageLoaded,
+        ),
+    ];
+    if (_remainingImages == 0) {
+      _completed = true;
+      onCompleted();
+    }
+  }
+
+  final VoidCallback onCompleted;
+  late final List<_ReaderLiveImageStream> _streams;
+  late int _remainingImages;
+  bool _completed = false;
+  bool _disposed = false;
+
+  void _handleImageLoaded() {
+    if (_completed || _disposed) {
+      return;
+    }
+    _remainingImages--;
+    if (_remainingImages <= 0) {
+      _completed = true;
+      onCompleted();
+    }
+  }
+
+  void dispose() {
+    _disposed = true;
+    for (final stream in _streams) {
+      stream.dispose();
+    }
+  }
+}
+
+class _ReaderLiveImageStream {
+  _ReaderLiveImageStream({
+    required this.provider,
+    required ImageConfiguration configuration,
+    this.onLoaded,
+  }) : stream = provider.resolve(configuration) {
+    _listener = ImageStreamListener(
+      _handleImageFrame,
+      onError: (Object _, StackTrace? __) {},
+    );
+    stream.addListener(_listener);
+  }
+
+  final ImageProvider provider;
+  final ImageStream stream;
+  final VoidCallback? onLoaded;
+  late final ImageStreamListener _listener;
+  ImageInfo? _imageInfo;
+  bool _hasLoaded = false;
+
+  void _handleImageFrame(ImageInfo imageInfo, bool synchronousCall) {
+    final oldImageInfo = _imageInfo;
+    _imageInfo = imageInfo;
+    if (!_hasLoaded) {
+      _hasLoaded = true;
+      onLoaded?.call();
+    }
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      oldImageInfo?.dispose();
+    });
+  }
+
+  void dispose() {
+    stream.removeListener(_listener);
+    final imageInfo = _imageInfo;
+    _imageInfo = null;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      imageInfo?.dispose();
+    });
+  }
 }
 
 /// [_precacheImage] is used to precache the image for the given page.

@@ -13,23 +13,33 @@ abstract class BaseImageProvider<T extends BaseImageProvider<T>>
   const BaseImageProvider();
 
   static const int maxImagePixel = 2560 * 1440;
+  static const int maxImageLongEdge = 4096;
 
   static TargetImageSize _getTargetSize(int width, int height) {
     // ignore invalid size
     if (width <= 0 || height <= 0) {
       return TargetImageSize(width: width, height: height);
     }
-    // ignore too wide or too tall image
-    final imageRatio = width / height;
-    if (imageRatio > 2 || imageRatio < 0.5) {
+
+    var resizeRatio = 1.0;
+    final pixels = width * height;
+    if (pixels > maxImagePixel) {
+      resizeRatio = min(resizeRatio, sqrt(maxImagePixel / pixels));
+    }
+
+    final longEdge = max(width, height);
+    if (longEdge > maxImageLongEdge) {
+      resizeRatio = min(resizeRatio, maxImageLongEdge / longEdge);
+    }
+
+    if (resizeRatio >= 1.0) {
       return TargetImageSize(width: width, height: height);
     }
-    // resize if too large
-    if (width * height > maxImagePixel) {
-      final ratio = sqrt(maxImagePixel / (width * height));
-      return TargetImageSize(width: (width * ratio).round(), height: (height * ratio).round());
-    }
-    return TargetImageSize(width: width, height: height);
+
+    return TargetImageSize(
+      width: max(1, (width * resizeRatio).round()),
+      height: max(1, (height * resizeRatio).round()),
+    );
   }
 
   @override

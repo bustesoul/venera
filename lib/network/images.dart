@@ -10,6 +10,16 @@ import 'package:venera/utils/image.dart';
 import 'app_dio.dart';
 
 abstract class ImageDownloader {
+  static Uint8List _toUint8List(dynamic data) {
+    if (data is Uint8List) {
+      return data;
+    }
+    if (data is List<int>) {
+      return Uint8List.fromList(data);
+    }
+    throw "Error: Invalid image bytes.";
+  }
+
   static Stream<ImageDownloadProgress> loadThumbnail(
       String url, String? sourceKey,
       [String? cid]) async* {
@@ -23,6 +33,7 @@ abstract class ImageDownloader {
         totalBytes: data.length,
         imageBytes: data,
       );
+      return;
     }
 
     var configs = <String, dynamic>{};
@@ -63,28 +74,34 @@ abstract class ImageDownloader {
     if (expectedBytes == -1) {
       expectedBytes = null;
     }
-    var buffer = <int>[];
+    final buffer = BytesBuilder(copy: false);
+    var currentBytes = 0;
     await for (var data in stream) {
-      buffer.addAll(data);
+      buffer.add(data);
+      currentBytes += data.length;
       if (expectedBytes != null) {
         yield ImageDownloadProgress(
-          currentBytes: buffer.length,
+          currentBytes: currentBytes,
           totalBytes: expectedBytes,
         );
       }
     }
 
+    Uint8List data = buffer.takeBytes();
     if (configs['onResponse'] is JSInvokable) {
-      final uint8List = Uint8List.fromList(buffer);
-      buffer = (configs['onResponse'] as JSInvokable)([uint8List]);
+      dynamic result = (configs['onResponse'] as JSInvokable)([data]);
+      if (result is Future) {
+        result = await result;
+      }
+      data = _toUint8List(result);
       (configs['onResponse'] as JSInvokable).free();
     }
 
-    await CacheManager().writeCache(cacheKey, buffer);
+    await CacheManager().writeCache(cacheKey, data);
     yield ImageDownloadProgress(
-      currentBytes: buffer.length,
-      totalBytes: buffer.length,
-      imageBytes: Uint8List.fromList(buffer),
+      currentBytes: data.length,
+      totalBytes: data.length,
+      imageBytes: data,
     );
   }
 
@@ -133,6 +150,7 @@ abstract class ImageDownloader {
         totalBytes: data.length,
         imageBytes: data,
       );
+      return;
     }
 
     Future<Map<String, dynamic>?> Function()? onLoadFailed;
@@ -175,34 +193,25 @@ abstract class ImageDownloader {
         if (expectedBytes == -1) {
           expectedBytes = null;
         }
-        var buffer = <int>[];
+        final buffer = BytesBuilder(copy: false);
+        var currentBytes = 0;
         await for (var data in stream) {
-          buffer.addAll(data);
+          buffer.add(data);
+          currentBytes += data.length;
           yield ImageDownloadProgress(
-            currentBytes: buffer.length,
+            currentBytes: currentBytes,
             totalBytes: expectedBytes,
           );
         }
 
+        Uint8List data = buffer.takeBytes();
         if (configs['onResponse'] is JSInvokable) {
-          dynamic result = (configs['onResponse'] as JSInvokable)([Uint8List.fromList(buffer)]);
+          dynamic result = (configs['onResponse'] as JSInvokable)([data]);
           if (result is Future) {
             result = await result;
           }
-          if (result is List<int>) {
-            buffer = result;
-          } else {
-            throw "Error: Invalid onResponse result.";
-          }
+          data = _toUint8List(result);
           (configs['onResponse'] as JSInvokable).free();
-        }
-
-        Uint8List data;
-        if (buffer is Uint8List) {
-          data = buffer;
-        } else {
-          data = Uint8List.fromList(buffer);
-          buffer.clear();
         }
 
         if (configs['modifyImage'] != null) {
@@ -213,12 +222,12 @@ abstract class ImageDownloader {
           data = newData;
         }
 
-        await CacheManager().writeCache(cacheKey, data);
         yield ImageDownloadProgress(
           currentBytes: data.length,
           totalBytes: data.length,
           imageBytes: data,
         );
+        await CacheManager().writeCache(cacheKey, data);
         return;
       } catch (e) {
         if (retryLimit < 0 || onLoadFailed == null) {
