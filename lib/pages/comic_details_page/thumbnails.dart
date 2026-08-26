@@ -137,8 +137,11 @@ class _ComicThumbnailsState extends State<_ComicThumbnails> {
                             fit: BoxFit.contain,
                             width: double.infinity,
                             height: double.infinity,
-                            cacheWidth: thumbnailCacheWidth,
-                            cacheHeight: thumbnailCacheHeight,
+                            // Sprite thumbnails (part != null) are cropped with
+                            // original-pixel coordinates, so they must not be
+                            // decoded at a resized resolution.
+                            cacheWidth: part == null ? thumbnailCacheWidth : null,
+                            cacheHeight: part == null ? thumbnailCacheHeight : null,
                             part: part,
                           ),
                         ),
