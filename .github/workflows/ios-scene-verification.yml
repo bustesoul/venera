@@ -1,0 +1,35 @@
+name: Verify iOS scene startup build
+
+on:
+  push:
+    branches: [codex/ios-scene-startup]
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: pubspec.yaml
+          architecture: x64
+      - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+      - name: Verify packaged scene and create IPA
+        working-directory: build/ios/iphoneos
+        run: |
+          scene_delegate=$(/usr/libexec/PlistBuddy -c 'Print :UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication:0:UISceneDelegateClassName' Runner.app/Info.plist)
+          test "$scene_delegate" = FlutterSceneDelegate
+          mkdir Payload
+          mv Runner.app Payload/
+          zip -qr venera-ios-scene-startup.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: venera-ios-scene-startup
+          path: build/ios/iphoneos/venera-ios-scene-startup.ipa
+          if-no-files-found: error
