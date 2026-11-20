@@ -9,15 +9,15 @@ permissions:
 
 jobs:
   build-ios:
-    runs-on: macos-15-intel
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           flutter-version-file: pubspec.yaml
-          architecture: x64
-      - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+          architecture: arm64
+      - run: sudo xcode-select --switch /Applications/Xcode_27.2.app
       - run: flutter pub get
       - run: flutter build ios --release --no-codesign
       - name: Verify packaged scene and create IPA
@@ -25,11 +25,13 @@ jobs:
         run: |
           scene_delegate=$(/usr/libexec/PlistBuddy -c 'Print :UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication:0:UISceneDelegateClassName' Runner.app/Info.plist)
           test "$scene_delegate" = FlutterSceneDelegate
+          sdk=$(/usr/libexec/PlistBuddy -c 'Print :DTSDKName' Runner.app/Info.plist)
+          test "$sdk" = iphoneos27.2
           mkdir Payload
           mv Runner.app Payload/
-          zip -qr venera-ios-scene-startup.ipa Payload
+          zip -qr venera-ios-scene-startup-sdk27.2.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
-          name: venera-ios-scene-startup
-          path: build/ios/iphoneos/venera-ios-scene-startup.ipa
+          name: venera-ios-scene-startup-sdk27.2
+          path: build/ios/iphoneos/venera-ios-scene-startup-sdk27.2.ipa
           if-no-files-found: error
