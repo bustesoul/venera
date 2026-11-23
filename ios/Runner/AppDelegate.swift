@@ -4,24 +4,28 @@ import UniformTypeIdentifiers
 import Foundation // 添加此行
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, UIDocumentPickerDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate, UIDocumentPickerDelegate {
   var flutterResult: FlutterResult?
   var directoryPath: URL!
 
   // 定义插件通道名称
   private var directoryPicker: DirectoryPicker?
 
-  override func application(
-    _ application: UIApplication,
-    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
-  ) -> Bool {
-    GeneratedPluginRegistrant.register(with: self)
+  private var flutterViewController: FlutterViewController? {
+    UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .filter { $0.isKeyWindow }
+      .compactMap { $0.rootViewController as? FlutterViewController }
+      .first
+  }
 
-    guard let controller = window?.rootViewController as? FlutterViewController else {
-          fatalError("rootViewController is not of type FlutterViewController")
-    }
-
-    let methodChannel = FlutterMethodChannel(name: "venera/method_channel", binaryMessenger: controller.binaryMessenger)
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    let methodChannel = FlutterMethodChannel(
+      name: "venera/method_channel",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
     methodChannel.setMethodCallHandler { (call, result) in
       if call.method == "getProxy" {
         if let proxySettings = CFNetworkCopySystemProxySettings()?.takeUnretainedValue() as NSDictionary?,
@@ -40,33 +44,37 @@ import Foundation // 添加此行
         }
         result(nil)
       } else if call.method == "getDirectoryPath" {
+        guard let controller = self.flutterViewController else {
+          result(nil)
+          return
+        }
         self.flutterResult = result
-        self.getDirectoryPath()
+        self.getDirectoryPath(from: controller)
       } else if call.method == "stopAccessingSecurityScopedResource" {
         self.directoryPath?.stopAccessingSecurityScopedResource()
         self.directoryPath = nil
         result(nil)
       } else if call.method == "selectDirectory" {
+        guard let controller = self.flutterViewController else {
+          result(nil)
+          return
+        }
         self.directoryPicker = DirectoryPicker()
-        self.directoryPicker?.selectDirectory(result: result)
+        self.directoryPicker?.selectDirectory(from: controller, result: result)
       } else {
         result(FlutterMethodNotImplemented)
       }
     }
-
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  func getDirectoryPath() {
+  private func getDirectoryPath(from controller: UIViewController) {
     let documentPicker = UIDocumentPickerViewController(forOpeningContentTypes: [UTType.folder], asCopy: false)
     documentPicker.delegate = self
     documentPicker.allowsMultipleSelection = false
     documentPicker.directoryURL = nil
     documentPicker.modalPresentationStyle = .formSheet
 
-    if let rootViewController = window?.rootViewController {
-      rootViewController.present(documentPicker, animated: true, completion: nil)
-    }
+    controller.present(documentPicker, animated: true)
   }
 
   func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
