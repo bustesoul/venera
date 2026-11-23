@@ -7,18 +7,24 @@ on:
 
 jobs:
   Build_IOS:
-    runs-on: macos-15
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
           channel: "stable"
           flutter-version-file: pubspec.yaml
-          architecture: x64
-      - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+          architecture: arm64
+      - run: sudo xcode-select --switch /Applications/Xcode_27.2.app
       - run: flutter pub get
       - run: flutter build ios --release --no-codesign
-      - run: |
+      - name: Verify packaged scene and create IPA
+        run: |
+          app_plist=build/ios/iphoneos/Runner.app/Info.plist
+          scene_delegate=$(/usr/libexec/PlistBuddy -c 'Print :UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication:0:UISceneDelegateClassName' "$app_plist")
+          test "$scene_delegate" = FlutterSceneDelegate
+          sdk=$(/usr/libexec/PlistBuddy -c 'Print :DTSDKName' "$app_plist")
+          test "$sdk" = iphoneos27.2
           mkdir -p build/ios/iphoneos/Payload
           mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload
           cd build/ios/iphoneos/
